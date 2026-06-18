@@ -1659,10 +1659,23 @@ function TabCiclos({ procs }) {
           <button disabled={pagina===pgTotal-1} onClick={() => setPag(p => p+1)} style={{background:S.panel,border:`1.5px solid ${S.border}`,borderRadius:8,padding:"5px 14px",fontSize:11,fontWeight:700,cursor:pagina===pgTotal-1?"default":"pointer",color:pagina===pgTotal-1?S.mutedLight:S.slate,fontFamily:S.font}}>Siguiente →</button>
         </div>
       )}
-      {/* Heatmap cobertura */}
+      {/* Heatmap cobertura — generado dinámicamente desde ciclosData */}
       {(() => {
+        // Construir heatmap desde ciclosData (incluye datos del JSON de GitHub)
+        const fechasConDatos = new Set(procs.map(p => p.raw.f));
+        // Rango: desde la primera fecha hasta hoy
+        const fechaMin = procs.length ? procs[0].raw.f : '2025-07-01';
+        const fechaMax = new Date().toISOString().slice(0,10);
         const _meses = {};
-        RAW_COBERTURA.forEach(r => { const m=r.f.slice(0,7); if(!_meses[m])_meses[m]=[]; _meses[m].push(r); });
+        let d = new Date(fechaMin);
+        const fin = new Date(fechaMax);
+        while (d <= fin) {
+          const fs = d.toISOString().slice(0,10);
+          const m = fs.slice(0,7);
+          if (!_meses[m]) _meses[m] = [];
+          _meses[m].push({ f: fs, ok: fechasConDatos.has(fs) ? 1 : 0 });
+          d.setDate(d.getDate() + 1);
+        }
         const mesesArr = Object.entries(_meses).sort(([a],[b])=>a.localeCompare(b));
         return (
       <div style={{background:S.panel,border:`1px solid ${S.border}`,
