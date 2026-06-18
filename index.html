@@ -1665,7 +1665,9 @@ function TabCiclos({ procs }) {
         const fechasConDatos = new Set(procs.map(p => p.raw.f));
         // Rango: desde la primera fecha hasta hoy
         const fechaMin = procs.length ? procs[0].raw.f : '2025-07-01';
-        const fechaMax = new Date().toISOString().slice(0,10);
+        const _hoy = new Date();
+        _hoy.setDate(_hoy.getDate() + 1); // +1 para incluir hoy siempre
+        const fechaMax = _hoy.toISOString().slice(0,10);
         const _meses = {};
         let d = new Date(fechaMin);
         const fin = new Date(fechaMax);
@@ -1681,7 +1683,7 @@ function TabCiclos({ procs }) {
       <div style={{background:S.panel,border:`1px solid ${S.border}`,
         borderRadius:12,padding:"16px 18px",fontFamily:S.font,marginTop:24}}>
         <div style={{fontSize:12,fontWeight:800,color:S.slate,marginBottom:4}}>
-          📅 Cobertura diaria SN8 — julio 2025 a junio 2026
+          📅 Cobertura diaria SN8 — {new Date(fechaMin).toLocaleDateString("es-ES",{month:"long",year:"numeric"})} a {new Date(fechaMax).toLocaleDateString("es-ES",{month:"long",year:"numeric"})}
         </div>
         <div style={{fontSize:11,color:S.muted,marginBottom:14}}>
           Cada celda = 1 día ·{" "}
