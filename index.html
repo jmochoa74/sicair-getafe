@@ -872,22 +872,6 @@ const RAW_COBERTURA = [
 {"f":"2026-06-15","ok":1}
 ];
 
-const STATS_COBERTURA = {
-  "dias_total": 349,
-  "dias_con": 52,
-  "ciclos_real": 72,
-  "ciclos_posibles": 2094,
-  "pct_cobertura": 3.4,
-  "sob_real_h": 146.7,
-  "sob_real_eur": 792,
-  "factor": 49,
-  "sob_proyectado_eur": 38808,
-  "kw": 45,
-  "coste_kwh": 0.12
-};
-
-
-
 const RAW_SERIE_RESP = [
 {"f":"2025-01-02","our_lab":5.9,"sour_lab":1.4,"sour_sn8_pk":null,"sour_sn8_fl":null,"n_ciclos":null,"sour_nocturno_pk":null,"sour_nocturno_fl":null,"fin_nocturno":null,"tipo_match":null},
 {"f":"2025-01-03","our_lab":8,"sour_lab":1.7,"sour_sn8_pk":null,"sour_sn8_fl":null,"n_ciclos":null,"sour_nocturno_pk":null,"sour_nocturno_fl":null,"fin_nocturno":null,"tipo_match":null},
@@ -1374,65 +1358,87 @@ function CicloChart({ p }) {
 
 
 // ── Panel Cobertura SN8 ───────────────────────────────────────────
-function PanelCobertura() {
-  const S2 = S; // alias local
-  const pct   = STATS_COBERTURA.pct_cobertura;
-  const factor = STATS_COBERTURA.factor;
-  const eur_real = STATS_COBERTURA.sob_real_eur;
-  const eur_proy = STATS_COBERTURA.sob_proyectado_eur;
+// Calculado dinámicamente desde ciclosData (antes: STATS_COBERTURA hardcodeado,
+// congelado desde una versión con solo 72 ciclos — quedó contradiciendo al
+// resto del dashboard según la cobertura real fue mejorando).
+// Ciclos posibles = días de operación × 2 (horario fijo GVC Getafe: 10:00 y 22:00).
+const CICLOS_DIA_TEORICO = 2;
 
-  // Heatmap: agrupar por mes y semana
-  const meses = {};
-  RAW_COBERTURA.forEach(r => {
-    const m = r.f.slice(0,7);
-    if (!meses[m]) meses[m] = [];
-    meses[m].push(r);
-  });
-  const mesesArr = Object.entries(meses).sort(([a],[b])=>a.localeCompare(b));
+function PanelCobertura({ procs }) {
+  const val = procs.filter(p => p.valido);
+
+  const fechasTodas = procs.map(p => p.raw.f).sort();
+  const fechasValidas = val.map(p => p.raw.f);
+  const diasConSet = new Set(fechasValidas);
+
+  const d0 = fechasTodas[0], d1 = fechasTodas[fechasTodas.length - 1];
+  const diasTotal = d0 && d1
+    ? Math.round((new Date(d1) - new Date(d0)) / 86400000) + 1
+    : 0;
+  const diasCon = diasConSet.size;
+
+  const ciclosReal = val.length;
+  const ciclosPosibles = diasTotal * CICLOS_DIA_TEORICO;
+  const pct = ciclosPosibles ? +(ciclosReal / ciclosPosibles * 100).toFixed(1) : 0;
+  const factor = ciclosReal ? +(ciclosPosibles / ciclosReal).toFixed(1) : 0;
+
+  const sobRealH = val.reduce((s, p) => s + p.sobH, 0);
+  const eurReal = Math.round(sobRealH * 45 * 0.12);
+  const eurProy = Math.round(eurReal * factor);
+
+  // Estado según cobertura real (ya no siempre es "insuficiente")
+  const nivel = pct >= 80 ? "ok" : pct >= 50 ? "warn" : "bad";
+  const color = nivel === "ok" ? S.green : nivel === "warn" ? S.amber : S.red;
+  const icono = nivel === "ok" ? "✅" : "⚠️";
+  const titulo = nivel === "ok"
+    ? `Cobertura SN8 óptima — ${pct}% del tiempo con datos`
+    : `Cobertura SN8 insuficiente — ${pct}% del tiempo con datos`;
 
   return (
     <div style={{marginBottom:20}}>
       {/* Titular impacto */}
-      <div style={{background:`linear-gradient(135deg, ${S.red}15, ${S.amber}10)`,
-        border:`2px solid ${S.red}33`,borderRadius:14,padding:"20px 24px",
+      <div style={{background:`linear-gradient(135deg, ${color}15, ${S.amber}10)`,
+        border:`2px solid ${color}33`,borderRadius:14,padding:"20px 24px",
         marginBottom:16,fontFamily:S.font}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}}>
           <div>
-            <div style={{fontSize:13,fontWeight:800,color:S.red,marginBottom:4,
+            <div style={{fontSize:13,fontWeight:800,color:color,marginBottom:4,
               textTransform:"uppercase",letterSpacing:0.5}}>
-              ⚠️ Cobertura SN8 insuficiente — {pct}% del tiempo con datos
+              {icono} {titulo}
             </div>
             <div style={{fontSize:12,color:S.slate,lineHeight:1.7}}>
-              En {STATS_COBERTURA.dias_total} días de operación, el SN8 solo registró datos en{" "}
-              <b style={{color:S.red}}>{STATS_COBERTURA.dias_con} días ({Math.round(STATS_COBERTURA.dias_con/STATS_COBERTURA.dias_total*100)}%)</b>.
-              Con esos <b>{STATS_COBERTURA.ciclos_real} ciclos</b> se cuantificaron{" "}
-              <b style={{color:S.amber}}>{eur_real.toLocaleString()}€ de sobreaireo evitable</b>.
-              {" "}Con cobertura continua (<b>{STATS_COBERTURA.ciclos_posibles.toLocaleString()} ciclos/año</b>),
-              la proyección escala <b style={{color:S.red}}>×{factor}</b>:
+              En {diasTotal} días de operación, el SN8 registró datos en{" "}
+              <b style={{color:color}}>{diasCon} días ({diasTotal ? Math.round(diasCon/diasTotal*100) : 0}%)</b>.
+              Con esos <b>{ciclosReal} ciclos</b> se cuantificaron{" "}
+              <b style={{color:S.amber}}>{eurReal.toLocaleString()}€ de sobreaireo evitable</b>.
+              {nivel !== "ok" && <>{" "}Con cobertura continua (<b>{ciclosPosibles.toLocaleString()} ciclos/año</b>),
+              la proyección escalaría <b style={{color:color}}>×{factor}</b>:</>}
             </div>
           </div>
-          <div style={{textAlign:"center",minWidth:140}}>
-            <div style={{fontSize:11,color:S.muted,fontWeight:700,marginBottom:4}}>
-              PROYECCIÓN ANUAL
+          {nivel !== "ok" && (
+            <div style={{textAlign:"center",minWidth:140}}>
+              <div style={{fontSize:11,color:S.muted,fontWeight:700,marginBottom:4}}>
+                PROYECCIÓN ANUAL
+              </div>
+              <div style={{fontSize:38,fontWeight:900,color:color,lineHeight:1}}>
+                {eurProy.toLocaleString()}€
+              </div>
+              <div style={{fontSize:10,color:S.muted,marginTop:4}}>
+                sobreaireo evitable/año<br/>con SN8 continuo
+              </div>
             </div>
-            <div style={{fontSize:38,fontWeight:900,color:S.red,lineHeight:1}}>
-              {eur_proy.toLocaleString()}€
-            </div>
-            <div style={{fontSize:10,color:S.muted,marginTop:4}}>
-              sobreaireo evitable/año<br/>con SN8 continuo
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Barra de cobertura */}
         <div style={{marginTop:14}}>
           <div style={{display:"flex",justifyContent:"space-between",
             fontSize:10,color:S.muted,marginBottom:4}}>
-            <span>Cobertura actual: <b style={{color:S.red}}>{pct}%</b></span>
+            <span>Cobertura actual: <b style={{color:color}}>{pct}%</b></span>
             <span>Objetivo SICAIR Industrial: <b style={{color:S.green}}>100%</b></span>
           </div>
           <div style={{background:S.border,borderRadius:20,height:10,overflow:"hidden"}}>
-            <div style={{width:`${pct}%`,background:S.red,height:"100%",borderRadius:20,
+            <div style={{width:`${Math.min(pct,100)}%`,background:color,height:"100%",borderRadius:20,
               transition:"width 0.5s"}}/>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",
@@ -1446,13 +1452,13 @@ function PanelCobertura() {
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
         {[
           {icon:"📅",l:"Días con datos SN8",
-            v:STATS_COBERTURA.dias_con, u:`de ${STATS_COBERTURA.dias_total} días`,c:S.red},
+            v:diasCon, u:`de ${diasTotal} días`,c:color},
           {icon:"🔄",l:"Ciclos analizados",
-            v:STATS_COBERTURA.ciclos_real, u:`de ~${STATS_COBERTURA.ciclos_posibles.toLocaleString()} posibles`,c:S.amber},
+            v:ciclosReal, u:`de ~${ciclosPosibles.toLocaleString()} posibles`,c:S.amber},
           {icon:"💶",l:"Sobreaireo detectado",
-            v:eur_real.toLocaleString()+"€", u:`con ${pct}% de datos`,c:S.amber},
-          {icon:"🚀",l:"Proyección 100%",
-            v:eur_proy.toLocaleString()+"€", u:`×${factor} con SN8 continuo`,c:S.green},
+            v:eurReal.toLocaleString()+"€", u:`con ${pct}% de datos`,c:S.amber},
+          {icon:"🚀",l: nivel==="ok" ? "Proyección anual" : "Proyección 100%",
+            v:eurProy.toLocaleString()+"€", u: nivel==="ok" ? "con cobertura actual" : `×${factor} con SN8 continuo`,c:S.green},
         ].map((k,i)=>(
           <div key={i} style={{background:S.panel,border:`1.5px solid ${k.c}33`,
             borderRadius:12,padding:"14px 16px",fontFamily:S.font}}>
@@ -1543,7 +1549,29 @@ function TabEjecutivo({ procs }) {
           </Card>
         );
       })()}
-      <PanelCobertura/>
+      <PanelStaleness procs={procs}/>
+      <PanelCobertura procs={procs}/>
+    </div>
+  );
+}
+
+// ── Alerta de pipeline desactualizado (>48h sin dato nuevo) ────────
+function PanelStaleness({ procs }) {
+  const fechas = procs.map(p => p.raw.f).filter(Boolean).sort();
+  if (!fechas.length) return null;
+  const ultima = fechas[fechas.length - 1];
+  const horas = (Date.now() - new Date(ultima + "T00:00:00")) / 3600000;
+  if (horas <= 48) return null;
+  const dias = Math.floor(horas / 24);
+  return (
+    <div style={{background:`${S.red}12`,border:`2px solid ${S.red}44`,borderRadius:14,
+      padding:"14px 20px",marginBottom:16,fontFamily:S.font,display:"flex",
+      alignItems:"center",gap:10}}>
+      <span style={{fontSize:20}}>🔴</span>
+      <div style={{fontSize:12,color:S.slate}}>
+        <b style={{color:S.red}}>Pipeline sin datos nuevos hace {dias} días.</b>{" "}
+        Último ciclo registrado: {ultima}. Revisa la tarea programada (update_getafe.py) en el PC del SN8.
+      </div>
     </div>
   );
 }
